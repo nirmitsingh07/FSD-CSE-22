@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demo fetch</title>
+  <style>
+    table {
+      width: 80vw;
+      border-collapse: collapse;
+      margin: auto;
+    }
+    th, td {
+      border: 2px solid red;
+      text-align: center;
+    }
+  </style>
+  <script>
+    const url = 'https://dummyjson.com/products?limit=10&skip=6';
+    let productsCache = []; // keep fetched products for cart actions
+    const cart = []; // {id, title, priceInr, qty}
+
+    function formatINR(value) {
+      return Number(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    async function loadproducts() {
+      try {
+        const res = await fetch(url);
+        console.log("res=", res);
+        const data = await res.json();
+        console.log("data=", data.products);
+        productsCache = data.products;
+
+        // Fetch current USD -> INR exchange rate; use a fallback if the call fails
+        let usdToInr = 83.5; // fallback rate
+        try {
+          const rateRes = await fetch('https://api.exchangerate.host/latest?base=USD&symbols=INR');
+          const rateData = await rateRes.json();
+          if (rateData && rateData.rates && rateData.rates.INR) {
+            usdToInr = rateData.rates.INR;
+          }
+        } catch (e) {
+          console.warn('Could not fetch exchange rate, using fallback', e);
+        }
+
+        let row = "";
+        data.products.forEach((p, index) => {
+          const inr = (p.price * usdToInr).toFixed(2);
+          row += `<tr>
+                    <td>${index + 1}</td>
+                    <td>${p.title}</td>
+                    <td><img src="${p.images[0] || ''}" width="50" height="50" alt="${p.title}"></td>
+                    <td>₹ ${formatINR(inr)}</td>
+                    <td>${p.rating}</td>
+                    <td>${p.stock}</td>
+                    <td>${p.brand}</td>
+                    <td>${p.category}</td>
+                    <td><button class="add-btn" data-index="${index}">Add to cart</button></td>
+                  </tr>`;
+        });
+        const el = document.getElementById('data');
+        el.innerHTML = row;
+
+        // Attach click listeners for add buttons
+        document.querySelectorAll('.add-btn').forEach(btn => {
+          btn.addEventListener('click', (ev) => {
+            const idx = Number(btn.dataset.index);
+            addToCart(productsCache[idx], usdToInr);
+          });
+        });
+
+      } catch (err) {
+        console.log("err=", err);
+      }
+    }
+
+    function addToCart(product, usdToInr) {
+      const priceInr = Number((product.price * usdToInr).toFixed(2));
+      const existing = cart.find(c => c.id === product.id);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        cart.push({ id: product.id, title: product.title, priceInr, qty: 1 });
+      }
+      updateCartUI();
+    }
+
+    function removeFromCart(id) {
+      const idx = cart.findIndex(c => c.id === id);
+      if (idx !== -1) {
+        cart.splice(idx, 1);
+        updateCartUI();
+      }
+    }
+
+    function updateCartUI() {
+      const cartBody = document.getElementById('cart-body');
+      const cartTotalEl = document.getElementById('cart-total');
+      const placeBtn = document.getElementById('place-order');
+      if (!cartBody) return;
+
+      if (cart.length === 0) {
+        cartBody.innerHTML = '<tr><td colspan="5">Cart is empty</td></tr>';
+        cartTotalEl.textContent = '₹ 0.00';
+        placeBtn.disabled = true;
+        return;
+      }
+
+      let html = '';
+      let total = 0;
+      cart.forEach(item => {
+        const subtotal = item.priceInr * item.qty;
+        total += subtotal;
+        html += `<tr>
+                  <td>${item.title}</td>
+                  <td>₹ ${formatINR(item.priceInr)}</td>
+                  <td>
+                    <button class="qty-decrease" data-id="${item.id}">-</button>
+                    <span class="qty-value" data-id="${item.id}" style="padding:0 8px;">${item.qty}</span>
+                    <button class="qty-increase" data-id="${item.id}">+</button>
+                  </td>
+                  <td>₹ ${formatINR(subtotal)}</td>
+                  <td><button class="remove-btn" data-id="${item.id}">Remove</button></td>
+                </tr>`;
+      });
+      cartBody.innerHTML = html;
+      cartTotalEl.textContent = `₹ ${formatINR(total)}`;
+      placeBtn.disabled = false;
+
+      // attach remove handlers
+      document.querySelectorAll('.remove-btn').forEach(b => {
+        b.addEventListener('click', () => removeFromCart(Number(b.dataset.id)));
+      });
+
+      // attach qty handlers
+      document.querySelectorAll('.qty-increase').forEach(b => {
+        b.addEventListener('click', () => {
+          const id = Number(b.dataset.id);
+          const it = cart.find(c => c.id === id);
+          if (it) {
+            it.qty += 1;
+            updateCartUI();
+          }
+        });
+      });
+      document.querySelectorAll('.qty-decrease').forEach(b => {
+        b.addEventListener('click', () => {
+          const id = Number(b.dataset.id);
+          const it = cart.find(c => c.id === id);
+          if (it) {
+            if (it.qty > 1) {
+              it.qty -= 1;
+            } else {
+              removeFromCart(id);
+              return;
+            }
+            updateCartUI();
+          }
+        });
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('place-order').addEventListener('click', () => {
+        if (cart.length === 0) {
+          alert('Cart is empty');
+          return;
+        }
+        // Simulate placing order
+        const total = document.getElementById('cart-total').textContent;
+        alert(`Order placed. Total amount: ${total}`);
+        // clear cart
+        cart.splice(0, cart.length);
+        updateCartUI();
+      });
+    });
+
+    loadproducts();
+  </script>
+</head>
+<body>
+  <h1><center>List of Products</center></h1>
+  <table>
+    <thead>
+      <tr>
+        <th>sr.no</th>
+        <th>Title</th>
+        <th>Image</th>
+        <th>Price (₹)</th>
+        <th>Rating</th>
+        <th>Stock</th>
+        <th>Brand</th>
+        <th>Category</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="data">
+      
+    </tbody>
+  </table>
+
+  <!-- Cart panel -->
+  <div id="cart" style="width:80vw;margin:auto;margin-top:20px;">
+    <h2>Cart</h2>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Price (₹)</th>
+          <th>Qty</th>
+          <th>Subtotal (₹)</th>
+          <th>Remove</th>
+        </tr>
+      </thead>
+      <tbody id="cart-body">
+        <tr><td colspan="5">Cart is empty</td></tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" style="text-align:right;font-weight:bold;">Total:</td>
+          <td id="cart-total">₹ 0.00</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+    <div style="margin-top:10px;text-align:right;">
+      <button id="place-order" disabled>Place Order</button>
+    </div>
+  </div>
+</body>
+</html>
