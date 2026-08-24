@@ -1,0 +1,10 @@
+.book{
+    width: 250px;
+    height: 250px;
+    border: 2px solid green;
+    text-align: center;
+    margin: auto;
+    background-color: aqua;
+    border: 2px;
+    
+}
